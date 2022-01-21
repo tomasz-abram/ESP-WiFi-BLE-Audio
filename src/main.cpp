@@ -26,12 +26,18 @@ const byte potBothShutdown = 0x23;    // pot0 and pot1 simultaneous shutdown
 #define outputA 19 // dla encoder 
 #define outputB 18 // dla encoder 
 
-
+//LCD
+LiquidCrystal lcd(17, 16, 4, 0, 2, 15);
+int counter = 10;
+int aState;
+int aLastState;
 
 
 
 void setup() {
   Serial.begin(115200);
+
+//---------------------------------v START WIFI CONNECT AND UPDATE SECTION
   Serial.println("Booting");
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -87,17 +93,89 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   
-  pinMode(LED_BUILTIN, OUTPUT);
+   //--------- potentiometr section
+  digitalWrite(csPin, HIGH);        // chip select default to de-selected
+  pinMode(csPin, OUTPUT);           // configure chip select as output
+  SPI.begin();
+
+  //---------------------------
+
+  pinMode (outputA, INPUT); // A Encoder
+  pinMode (outputB, INPUT); //B Encoder
+  aLastState = digitalRead(outputA);  // Reads the initial state of the outputA
+  lcd.begin(16, 2); // rozdzielczość ekranu
+
+  //-----------------------------
+  /*
+    static const i2s_config_t i2s_config = {
+          .mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
+          .sample_rate = 44100, // corrected by info from bluetooth
+          .bits_per_sample = (i2s_bits_per_sample_t) 16,
+          .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+          .communication_format = (i2s_comm_format_t)I2S_COMM_FORMAT_STAND_MSB,
+          .intr_alloc_flags = 0, // default interrupt priority
+          .dma_buf_count = 8,
+          .dma_buf_len = 64,
+          .use_apll = false
+      };
+
+      a2dp_sink.set_i2s_config(i2s_config);
+      a2dp_sink.start("MyMusic");
+
+  */
+
+
+
+
 }
 
 void loop() {
 
 
+ aState = digitalRead(outputA); // Reads the "current" state of the outputA
+
+  if (aState != aLastState) {    // If the previous and the current state of the outputA are different, that means a Pulse has occured
+    if (digitalRead(outputB) != aState) { // If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
+      counter = counter + 5;
+    } else {
+      counter = counter - 5;
+    }
+    counter = constrain(counter, 0, 255);
+    setPotWiper(pot1, counter);
+    setPotWiper(pot0, counter);
+
+    Serial.print("Position: ");
+    Serial.println(counter);
+    lcd.clear();
+    lcd.print("Opor Ohm!");
+    lcd.setCursor(0, 2);
+    lcd.print(counter);
+    lcd.print("=");
+    lcd.print(counter * 39);
+    aLastState = aState; // Updates the previous state of the outputA with the current state
 
 
-  ArduinoOTA.handle();
-  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(1000);                       // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-  delay(1000);                       // wait for a second
+  }
+
+}
+
+void setPotWiper(int addr, int pos) {
+
+  pos = constrain(pos, 0, 255);            // limit wiper setting to range of 0 to 255
+
+  digitalWrite(csPin, LOW);                // select chip
+  SPI.transfer(addr);                      // configure target pot with wiper position
+  SPI.transfer(pos);
+  SPI.transfer(addr);                      // configure target pot with wiper position
+  SPI.transfer(pos);
+  SPI.transfer(addr);                      // configure target pot with wiper position
+  SPI.transfer(pos);
+  digitalWrite(csPin, HIGH);               // de-select chip
+
+  // print pot resistance between wiper and B terminal
+  long resistanceWB = ((rAB * pos) / maxPositions ) + rWiper;
+  Serial.print(pos);
+  Serial.print(resistanceWB);
+  Serial.println(" ohms");
+
 }
